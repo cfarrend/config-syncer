@@ -24,7 +24,7 @@ import (
 	"kubeops.dev/config-syncer/pkg/syncer"
 	"kubeops.dev/config-syncer/test/e2e/framework"
 
-	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	core "k8s.io/api/core/v1"
 	kerr "k8s.io/apimachinery/pkg/api/errors"
@@ -58,35 +58,40 @@ var _ = Describe("Secret-Syncer", func() {
 		f.EventuallyNamespaceDeleted(nsWithLabel.Name).Should(BeTrue())
 	})
 
-	shouldSyncSecretToAllNamespaces := func() {
-		By("Creating secret")
-		sourceSecret, err := f.KubeClient.CoreV1().Secrets(secret.Namespace).Create(context.TODO(), secret, metav1.CreateOptions{})
-		Expect(err).NotTo(HaveOccurred())
+	var (
+		shouldSyncSecretToAllNamespaces = func() {
+			By("Creating secret")
+			sourceSecret, err := f.KubeClient.CoreV1().Secrets(secret.Namespace).Create(context.TODO(), secret, metav1.CreateOptions{})
+			Expect(err).NotTo(HaveOccurred())
 
-		By("Checking secret has not synced yet")
-		f.EventuallySecretNotSynced(sourceSecret).Should(BeTrue())
+			By("Checking secret has not synced yet")
+			f.EventuallySecretNotSynced(sourceSecret).Should(BeTrue())
 
-		By("Adding sync annotation")
-		sourceSecret, _, err = core_util.PatchSecret(context.TODO(), f.KubeClient, sourceSecret, func(obj *core.Secret) *core.Secret {
-			metav1.SetMetaDataAnnotation(&obj.ObjectMeta, syncer.ConfigSyncKey, "")
-			return obj
-		}, metav1.PatchOptions{})
-		Expect(err).ShouldNot(HaveOccurred())
+			By("Adding sync annotation")
+			sourceSecret, _, err = core_util.PatchSecret(context.TODO(), f.KubeClient, sourceSecret, func(obj *core.Secret) *core.Secret {
+				metav1.SetMetaDataAnnotation(&obj.ObjectMeta, syncer.ConfigSyncKey, "")
+				return obj
+			}, metav1.PatchOptions{})
+			Expect(err).ShouldNot(HaveOccurred())
 
-		By("Checking secret has synced to all namespaces")
-		f.EventuallySecretSynced(sourceSecret).Should(BeTrue())
-	}
+			By("Checking secret has synced to all namespaces")
+			f.EventuallySecretSynced(sourceSecret).Should(BeTrue())
+		}
+	)
 
 	Describe("Across Namespaces", func() {
+
 		BeforeEach(func() {
 			config = operator.Config{}
 		})
 
 		Context("All Namespaces", func() {
+
 			It("should sync secret to all namespaces", shouldSyncSecretToAllNamespaces)
 		})
 
 		Context("New Namespace", func() {
+
 			It("should synced secret to new namespace", func() {
 				shouldSyncSecretToAllNamespaces()
 
@@ -100,6 +105,7 @@ var _ = Describe("Secret-Syncer", func() {
 		})
 
 		Context("Remove Sync Annotation", func() {
+
 			It("should delete synced secrets", func() {
 				shouldSyncSecretToAllNamespaces()
 
@@ -119,6 +125,7 @@ var _ = Describe("Secret-Syncer", func() {
 		})
 
 		Context("Source Update", func() {
+
 			It("should update synced secrets", func() {
 				shouldSyncSecretToAllNamespaces()
 
@@ -141,7 +148,9 @@ var _ = Describe("Secret-Syncer", func() {
 		})
 
 		Context("Backward Compatibility", func() {
+
 			It("should sync secret to all namespaces", func() {
+
 				By("Creating secret")
 				source, err := f.CreateSecret(secret)
 				Expect(err).NotTo(HaveOccurred())
@@ -162,7 +171,9 @@ var _ = Describe("Secret-Syncer", func() {
 		})
 
 		Context("Namespace Selector", func() {
+
 			It("should add secret to selected namespaces", func() {
+
 				shouldSyncSecretToAllNamespaces()
 
 				By("Adding selector annotation")
@@ -211,6 +222,7 @@ var _ = Describe("Secret-Syncer", func() {
 		})
 
 		Context("Source Deleted", func() {
+
 			It("should delete synced secrets", func() {
 				shouldSyncSecretToAllNamespaces()
 
@@ -235,6 +247,7 @@ var _ = Describe("Secret-Syncer", func() {
 			})
 
 			It("should delete synced secrets", func() {
+
 				By("Creating source namespace")
 				err := f.CreateNamespace(sourceNamespace)
 				Expect(err).NotTo(HaveOccurred())

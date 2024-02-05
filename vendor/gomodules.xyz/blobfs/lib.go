@@ -14,15 +14,10 @@ import (
 
 type BlobFS struct {
 	storageURL string
-	prefix     string
 }
 
-func New(storageURL string, prefix ...string) Interface {
-	prefix = append(prefix, "")
-	return &BlobFS{
-		storageURL: storageURL,
-		prefix:     prefix[0],
-	}
+func New(storageURL string) Interface {
+	return &BlobFS{storageURL: storageURL}
 }
 
 func NewInMemoryFS() Interface {
@@ -35,7 +30,7 @@ func NewOsFs() Interface {
 
 func (fs *BlobFS) WriteFile(ctx context.Context, filepath string, data []byte) error {
 	dir, filename := path.Split(filepath)
-	bucket, err := fs.openBucket(ctx, path.Join(fs.prefix, dir))
+	bucket, err := fs.openBucket(ctx, dir)
 	if err != nil {
 		return err
 	}
@@ -59,7 +54,7 @@ func (fs *BlobFS) WriteFile(ctx context.Context, filepath string, data []byte) e
 
 func (fs *BlobFS) ReadFile(ctx context.Context, filepath string) ([]byte, error) {
 	dir, filename := path.Split(filepath)
-	bucket, err := fs.openBucket(ctx, path.Join(fs.prefix, dir))
+	bucket, err := fs.openBucket(ctx, dir)
 	if err != nil {
 		return nil, err
 	}
@@ -81,7 +76,7 @@ func (fs *BlobFS) ReadFile(ctx context.Context, filepath string) ([]byte, error)
 
 func (fs *BlobFS) DeleteFile(ctx context.Context, filepath string) error {
 	dir, filename := path.Split(filepath)
-	bucket, err := fs.openBucket(ctx, path.Join(fs.prefix, dir))
+	bucket, err := fs.openBucket(ctx, dir)
 	if err != nil {
 		return err
 	}
@@ -92,7 +87,7 @@ func (fs *BlobFS) DeleteFile(ctx context.Context, filepath string) error {
 
 func (fs *BlobFS) Exists(ctx context.Context, filepath string) (bool, error) {
 	dir, filename := path.Split(filepath)
-	bucket, err := fs.openBucket(ctx, path.Join(fs.prefix, dir))
+	bucket, err := fs.openBucket(ctx, dir)
 	if err != nil {
 		return false, err
 	}
@@ -103,7 +98,7 @@ func (fs *BlobFS) Exists(ctx context.Context, filepath string) (bool, error) {
 
 func (fs *BlobFS) SignedURL(ctx context.Context, filepath string, opts *blob.SignedURLOptions) (string, error) {
 	dir, filename := path.Split(filepath)
-	bucket, err := fs.openBucket(ctx, path.Join(fs.prefix, dir))
+	bucket, err := fs.openBucket(ctx, dir)
 	if err != nil {
 		return "", err
 	}

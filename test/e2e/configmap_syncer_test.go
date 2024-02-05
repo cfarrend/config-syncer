@@ -24,7 +24,7 @@ import (
 	"kubeops.dev/config-syncer/pkg/syncer"
 	"kubeops.dev/config-syncer/test/e2e/framework"
 
-	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	core "k8s.io/api/core/v1"
 	kerr "k8s.io/apimachinery/pkg/api/errors"
@@ -58,35 +58,40 @@ var _ = Describe("Config-Syncer", func() {
 		f.EventuallyNamespaceDeleted(nsWithLabel.Name).Should(BeTrue())
 	})
 
-	shouldSyncConfigMapToAllNamespaces := func() {
-		By("Creating configMap")
-		sourceCM, err := f.KubeClient.CoreV1().ConfigMaps(cfgMap.Namespace).Create(context.TODO(), cfgMap, metav1.CreateOptions{})
-		Expect(err).NotTo(HaveOccurred())
+	var (
+		shouldSyncConfigMapToAllNamespaces = func() {
+			By("Creating configMap")
+			sourceCM, err := f.KubeClient.CoreV1().ConfigMaps(cfgMap.Namespace).Create(context.TODO(), cfgMap, metav1.CreateOptions{})
+			Expect(err).NotTo(HaveOccurred())
 
-		By("Checking configMap has not synced yet")
-		f.EventuallyConfigMapNotSynced(sourceCM).Should(BeTrue())
+			By("Checking configMap has not synced yet")
+			f.EventuallyConfigMapNotSynced(sourceCM).Should(BeTrue())
 
-		By("Adding sync annotation")
-		sourceCM, _, err = core_util.PatchConfigMap(context.TODO(), f.KubeClient, sourceCM, func(obj *core.ConfigMap) *core.ConfigMap {
-			metav1.SetMetaDataAnnotation(&obj.ObjectMeta, syncer.ConfigSyncKey, "")
-			return obj
-		}, metav1.PatchOptions{})
-		Expect(err).ShouldNot(HaveOccurred())
+			By("Adding sync annotation")
+			sourceCM, _, err = core_util.PatchConfigMap(context.TODO(), f.KubeClient, sourceCM, func(obj *core.ConfigMap) *core.ConfigMap {
+				metav1.SetMetaDataAnnotation(&obj.ObjectMeta, syncer.ConfigSyncKey, "")
+				return obj
+			}, metav1.PatchOptions{})
+			Expect(err).ShouldNot(HaveOccurred())
 
-		By("Checking configMap has synced to all namespaces")
-		f.EventuallyConfigMapSynced(sourceCM).Should(BeTrue())
-	}
+			By("Checking configMap has synced to all namespaces")
+			f.EventuallyConfigMapSynced(sourceCM).Should(BeTrue())
+		}
+	)
 
 	Describe("Across Namespaces", func() {
+
 		BeforeEach(func() {
 			config = operator.Config{}
 		})
 
 		Context("All Namespaces", func() {
+
 			It("should sync configMap to all namespaces", shouldSyncConfigMapToAllNamespaces)
 		})
 
 		Context("New Namespace", func() {
+
 			It("should synced configMap to new namespace", func() {
 				shouldSyncConfigMapToAllNamespaces()
 
@@ -100,6 +105,7 @@ var _ = Describe("Config-Syncer", func() {
 		})
 
 		Context("Remove Sync Annotation", func() {
+
 			It("should delete synced configMaps", func() {
 				shouldSyncConfigMapToAllNamespaces()
 
@@ -119,6 +125,7 @@ var _ = Describe("Config-Syncer", func() {
 		})
 
 		Context("Source Update ConfigMap Data", func() {
+
 			It("should update synced configMaps", func() {
 				shouldSyncConfigMapToAllNamespaces()
 
@@ -141,6 +148,7 @@ var _ = Describe("Config-Syncer", func() {
 		})
 
 		Context("Source Update ConfigMap BinaryData", func() {
+
 			It("should update synced configMaps", func() {
 				shouldSyncConfigMapToAllNamespaces()
 
@@ -163,7 +171,9 @@ var _ = Describe("Config-Syncer", func() {
 		})
 
 		Context("Backward Compatibility", func() {
+
 			It("should sync configMap to all namespaces", func() {
+
 				By("Creating configMap")
 				source, err := f.CreateConfigMap(cfgMap)
 				Expect(err).NotTo(HaveOccurred())
@@ -184,7 +194,9 @@ var _ = Describe("Config-Syncer", func() {
 		})
 
 		Context("Namespace Selector", func() {
+
 			It("should add configMap to selected namespaces", func() {
+
 				shouldSyncConfigMapToAllNamespaces()
 
 				By("Adding selector annotation")
@@ -233,6 +245,7 @@ var _ = Describe("Config-Syncer", func() {
 		})
 
 		Context("Source Deleted", func() {
+
 			It("should delete synced configMaps", func() {
 				shouldSyncConfigMapToAllNamespaces()
 
@@ -257,6 +270,7 @@ var _ = Describe("Config-Syncer", func() {
 			})
 
 			It("should delete synced configMaps", func() {
+
 				By("Creating source namespace")
 				err := f.CreateNamespace(sourceNamespace)
 				Expect(err).NotTo(HaveOccurred())

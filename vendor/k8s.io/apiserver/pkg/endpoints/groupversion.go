@@ -20,7 +20,7 @@ import (
 	"path"
 	"time"
 
-	restful "github.com/emicklei/go-restful/v3"
+	restful "github.com/emicklei/go-restful"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -79,7 +79,7 @@ type APIGroupVersion struct {
 	Convertor             runtime.ObjectConvertor
 	ConvertabilityChecker ConvertabilityChecker
 	Defaulter             runtime.ObjectDefaulter
-	Namer                 runtime.Namer
+	Linker                runtime.SelfLinker
 	UnsafeConvertor       runtime.ObjectConvertor
 	TypeConverter         fieldmanager.TypeConverter
 

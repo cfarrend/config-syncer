@@ -48,7 +48,7 @@ else
 	endif
 endif
 
-VERSION := "0.0.2"
+VERSION := "0.0.3"
 version_strategy := tag
 
 ###

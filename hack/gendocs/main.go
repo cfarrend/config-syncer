@@ -28,8 +28,6 @@ import (
 	"kubeops.dev/config-syncer/pkg/cmds"
 
 	"github.com/spf13/cobra/doc"
-	"golang.org/x/text/cases"
-	"golang.org/x/text/language"
 	"gomodules.xyz/runtime"
 	"k8s.io/klog/v2"
 )
@@ -77,7 +75,7 @@ func main() {
 	if err != nil {
 		klog.Fatalln(err)
 	}
-	err = os.MkdirAll(dir, 0o755)
+	err = os.MkdirAll(dir, 0755)
 	if err != nil {
 		klog.Fatalln(err)
 	}
@@ -91,7 +89,7 @@ func main() {
 			RootCmd bool
 		}{
 			strings.Replace(base, "_", "-", -1),
-			cases.Title(language.English).String(strings.Replace(base, "_", " ", -1)),
+			strings.Title(strings.Replace(base, "_", " ", -1)),
 			!strings.ContainsRune(base, '_'),
 		}
 		var buf bytes.Buffer
@@ -109,7 +107,7 @@ func main() {
 		klog.Fatalln(err)
 	}
 	index := filepath.Join(dir, "_index.md")
-	f, err := os.OpenFile(index, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
+	f, err := os.OpenFile(index, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
 	if err != nil {
 		klog.Fatalln(err)
 	}

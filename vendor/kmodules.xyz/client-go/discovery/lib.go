@@ -19,8 +19,6 @@ package discovery
 import (
 	"context"
 	"fmt"
-	"sort"
-	"strings"
 
 	"github.com/Masterminds/semver/v3"
 	"github.com/pkg/errors"
@@ -29,7 +27,6 @@ import (
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/klog/v2"
-	"kmodules.xyz/apiversion"
 )
 
 func GetVersion(client discovery.DiscoveryInterface) (string, error) {
@@ -99,19 +96,7 @@ func CheckAPIVersion(client discovery.DiscoveryInterface, constraint string) (bo
 }
 
 func IsPreferredAPIResource(client discovery.DiscoveryInterface, groupVersion, kind string) bool {
-	if resourceList, err := client.ServerPreferredResources(); discovery.IsGroupDiscoveryFailedError(err) || err == nil {
-		for _, resources := range resourceList {
-			if resources.GroupVersion != groupVersion {
-				continue
-			}
-			for _, resource := range resources.APIResources {
-				if resource.Kind == kind && !strings.ContainsRune(resource.Name, '/') {
-					return true
-				}
-			}
-		}
-	}
-	return false
+	return ExistsGroupVersionKind(client, groupVersion, kind)
 }
 
 func ExistsGroupVersionKind(client discovery.DiscoveryInterface, groupVersion, kind string) bool {
@@ -121,7 +106,7 @@ func ExistsGroupVersionKind(client discovery.DiscoveryInterface, groupVersion, k
 				continue
 			}
 			for _, resource := range resources.APIResources {
-				if resource.Kind == kind && !strings.ContainsRune(resource.Name, '/') {
+				if resource.Kind == kind {
 					return true
 				}
 			}
@@ -141,7 +126,7 @@ func ExistsGroupKind(client discovery.DiscoveryInterface, group, kind string) bo
 				continue
 			}
 			for _, resource := range resources.APIResources {
-				if resource.Kind == kind && !strings.ContainsRune(resource.Name, '/') {
+				if resource.Kind == kind {
 					return true
 				}
 			}
@@ -192,11 +177,9 @@ func (e *KnownBug) Error() string {
 	return "Bug: " + e.URL + ". To fix, " + e.Fix
 }
 
-var (
-	err62649_K1_9  = &KnownBug{URL: "https://github.com/kubernetes/kubernetes/pull/62649", Fix: "upgrade to Kubernetes 1.9.8 or later."}
-	err62649_K1_10 = &KnownBug{URL: "https://github.com/kubernetes/kubernetes/pull/62649", Fix: "upgrade to Kubernetes 1.10.2 or later."}
-	err83778_K1_16 = &KnownBug{URL: "https://github.com/kubernetes/kubernetes/pull/83787", Fix: "upgrade to Kubernetes 1.16.2 or later."}
-)
+var err62649_K1_9 = &KnownBug{URL: "https://github.com/kubernetes/kubernetes/pull/62649", Fix: "upgrade to Kubernetes 1.9.8 or later."}
+var err62649_K1_10 = &KnownBug{URL: "https://github.com/kubernetes/kubernetes/pull/62649", Fix: "upgrade to Kubernetes 1.10.2 or later."}
+var err83778_K1_16 = &KnownBug{URL: "https://github.com/kubernetes/kubernetes/pull/83787", Fix: "upgrade to Kubernetes 1.16.2 or later."}
 
 var (
 	DefaultConstraint          = ">= 1.11.0"
@@ -281,49 +264,4 @@ func checkVersion(v *semver.Version, multiMaster bool, constraint string, blackL
 		}
 	}
 	return nil
-}
-
-func HasGVK(client discovery.DiscoveryInterface, groupVersion, kind string) (bool, error) {
-	_, resourceList, err := client.ServerGroupsAndResources()
-	if discovery.IsGroupDiscoveryFailedError(err) || err == nil {
-		for _, resources := range resourceList {
-			if resources.GroupVersion != groupVersion {
-				continue
-			}
-			for _, resource := range resources.APIResources {
-				if resource.Kind == kind && !strings.ContainsRune(resource.Name, '/') {
-					return true, nil
-				}
-			}
-		}
-	}
-	return false, err
-}
-
-func ListAPIVersions(c discovery.DiscoveryInterface, group, kind string) ([]string, error) {
-	_, resourceList, err := c.ServerGroupsAndResources()
-
-	out := make([]string, 0)
-	if discovery.IsGroupDiscoveryFailedError(err) || err == nil {
-		for _, resources := range resourceList {
-			gv, err := schema.ParseGroupVersion(resources.GroupVersion)
-			if err != nil {
-				return nil, err
-			}
-			if gv.Group != group {
-				continue
-			}
-			for _, resource := range resources.APIResources {
-				if resource.Kind == kind && !strings.ContainsRune(resource.Name, '/') {
-					out = append(out, gv.Version)
-				}
-			}
-		}
-	}
-	if len(out) > 1 {
-		sort.Slice(out, func(i, j int) bool {
-			return apiversion.MustCompare(out[i], out[j]) > 0
-		})
-	}
-	return out, nil
 }

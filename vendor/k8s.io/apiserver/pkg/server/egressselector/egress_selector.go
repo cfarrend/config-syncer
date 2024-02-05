@@ -30,7 +30,6 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 
 	utilnet "k8s.io/apimachinery/pkg/util/net"
 	"k8s.io/apiserver/pkg/apis/apiserver"
@@ -92,6 +91,10 @@ func (s EgressType) AsNetworkContext() NetworkContext {
 
 func lookupServiceName(name string) (EgressType, error) {
 	switch strings.ToLower(name) {
+	// 'master' is deprecated, interpret "master" as controlplane internally until removed in v1.22.
+	case "master":
+		klog.Warning("EgressSelection name 'master' is deprecated, use 'controlplane' instead")
+		return ControlPlane, nil
 	case "controlplane":
 		return ControlPlane, nil
 	case "etcd":
@@ -131,7 +134,7 @@ func tunnelHTTPConnect(proxyConn net.Conn, proxyAddress, addr string) (net.Conn,
 
 type proxier interface {
 	// proxy returns a connection to addr.
-	proxy(ctx context.Context, addr string) (net.Conn, error)
+	proxy(addr string) (net.Conn, error)
 }
 
 var _ proxier = &httpConnectProxier{}
@@ -141,7 +144,7 @@ type httpConnectProxier struct {
 	proxyAddress string
 }
 
-func (t *httpConnectProxier) proxy(ctx context.Context, addr string) (net.Conn, error) {
+func (t *httpConnectProxier) proxy(addr string) (net.Conn, error) {
 	return tunnelHTTPConnect(t.conn, t.proxyAddress, addr)
 }
 
@@ -151,18 +154,14 @@ type grpcProxier struct {
 	tunnel client.Tunnel
 }
 
-func (g *grpcProxier) proxy(ctx context.Context, addr string) (net.Conn, error) {
-	return g.tunnel.DialContext(ctx, "tcp", addr)
+func (g *grpcProxier) proxy(addr string) (net.Conn, error) {
+	return g.tunnel.Dial("tcp", addr)
 }
 
 type proxyServerConnector interface {
 	// connect establishes connection to the proxy server, and returns a
 	// proxier based on the connection.
-	//
-	// The provided Context must be non-nil. The context is used for connecting to the proxy only.
-	// If the context expires before the connection is complete, an error is returned.
-	// Once successfully connected to the proxy, any expiration of the context will not affect the connection.
-	connect(context.Context) (proxier, error)
+	connect() (proxier, error)
 }
 
 type tcpHTTPConnectConnector struct {
@@ -170,11 +169,8 @@ type tcpHTTPConnectConnector struct {
 	tlsConfig    *tls.Config
 }
 
-func (t *tcpHTTPConnectConnector) connect(ctx context.Context) (proxier, error) {
-	d := tls.Dialer{
-		Config: t.tlsConfig,
-	}
-	conn, err := d.DialContext(ctx, "tcp", t.proxyAddress)
+func (t *tcpHTTPConnectConnector) connect() (proxier, error) {
+	conn, err := tls.Dial("tcp", t.proxyAddress, t.tlsConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -185,9 +181,8 @@ type udsHTTPConnectConnector struct {
 	udsName string
 }
 
-func (u *udsHTTPConnectConnector) connect(ctx context.Context) (proxier, error) {
-	var d net.Dialer
-	conn, err := d.DialContext(ctx, "unix", u.udsName)
+func (u *udsHTTPConnectConnector) connect() (proxier, error) {
+	conn, err := net.Dial("unix", u.udsName)
 	if err != nil {
 		return nil, err
 	}
@@ -198,25 +193,17 @@ type udsGRPCConnector struct {
 	udsName string
 }
 
-// connect establishes a connection to a proxy over gRPC.
-// TODO At the moment, it does not use the provided context.
-func (u *udsGRPCConnector) connect(_ context.Context) (proxier, error) {
+func (u *udsGRPCConnector) connect() (proxier, error) {
 	udsName := u.udsName
-	dialOption := grpc.WithContextDialer(func(ctx context.Context, addr string) (net.Conn, error) {
-		var d net.Dialer
-		c, err := d.DialContext(ctx, "unix", udsName)
+	dialOption := grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+		c, err := net.Dial("unix", udsName)
 		if err != nil {
 			klog.Errorf("failed to create connection to uds name %s, error: %v", udsName, err)
 		}
 		return c, err
 	})
 
-	// CreateSingleUseGrpcTunnel() unfortunately couples dial and connection contexts. Because of that,
-	// we cannot use ctx just for dialing and control the connection lifetime separately.
-	// See https://github.com/kubernetes-sigs/apiserver-network-proxy/issues/357.
-	tunnelCtx := context.TODO()
-	tunnel, err := client.CreateSingleUseGrpcTunnel(tunnelCtx, udsName, dialOption,
-		grpc.WithTransportCredentials(insecure.NewCredentials()))
+	tunnel, err := client.CreateSingleUseGrpcTunnel(udsName, dialOption, grpc.WithInsecure())
 	if err != nil {
 		return nil, err
 	}
@@ -242,12 +229,12 @@ func (d *dialerCreator) createDialer() utilnet.DialFunc {
 		trace := utiltrace.New(fmt.Sprintf("Proxy via %s protocol over %s", d.options.protocol, d.options.transport), utiltrace.Field{Key: "address", Value: addr})
 		defer trace.LogIfLong(500 * time.Millisecond)
 		start := egressmetrics.Metrics.Clock().Now()
-		proxier, err := d.connector.connect(ctx)
+		proxier, err := d.connector.connect()
 		if err != nil {
 			egressmetrics.Metrics.ObserveDialFailure(d.options.protocol, d.options.transport, egressmetrics.StageConnect)
 			return nil, err
 		}
-		conn, err := proxier.proxy(ctx, addr)
+		conn, err := proxier.proxy(addr)
 		if err != nil {
 			egressmetrics.Metrics.ObserveDialFailure(d.options.protocol, d.options.transport, egressmetrics.StageProxy)
 			return nil, err
@@ -372,16 +359,6 @@ func NewEgressSelector(config *apiserver.EgressSelectorConfiguration) (*EgressSe
 		cs.egressToDialer[name] = dialerCreator.createDialer()
 	}
 	return cs, nil
-}
-
-// NewEgressSelectorWithMap returns a EgressSelector with the supplied EgressType to DialFunc map.
-func NewEgressSelectorWithMap(m map[EgressType]utilnet.DialFunc) *EgressSelector {
-	if m == nil {
-		m = make(map[EgressType]utilnet.DialFunc)
-	}
-	return &EgressSelector{
-		egressToDialer: m,
-	}
 }
 
 // Lookup gets the dialer function for the network context.

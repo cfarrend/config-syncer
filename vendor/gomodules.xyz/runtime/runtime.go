@@ -17,12 +17,10 @@ limitations under the License.
 package runtime
 
 import (
-	"errors"
 	"fmt"
 	"net/http"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
@@ -31,10 +29,12 @@ import (
 	"k8s.io/klog/v2"
 )
 
-// ReallyCrash controls the behavior of HandleCrash and now defaults
-// true. It's still exposed so components can optionally set to false
-// to restore prior behavior.
-var ReallyCrash = true
+var (
+	// ReallyCrash controls the behavior of HandleCrash and now defaults
+	// true. It's still exposed so components can optionally set to false
+	// to restore prior behavior.
+	ReallyCrash = true
+)
 
 // PanicHandlers is a list of functions which will be invoked when a panic happens.
 var PanicHandlers = []func(interface{}){logPanic}
@@ -186,20 +186,4 @@ func GOPath() string {
 		klog.Fatal(err)
 	}
 	return strings.TrimSpace(string(out))
-}
-
-func RootDir(rel string) (string, error) {
-	_, file, _, ok := runtime.Caller(2)
-	if !ok {
-		return "", errors.New("failed to extract runtime info")
-	}
-	return filepath.Join(filepath.Dir(file), rel), nil
-}
-
-func MustRootDir(rel string) string {
-	if dir, err := RootDir(rel); err != nil {
-		panic(err)
-	} else {
-		return dir
-	}
 }

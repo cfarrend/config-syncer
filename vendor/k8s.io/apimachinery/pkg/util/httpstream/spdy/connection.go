@@ -123,10 +123,7 @@ func (c *connection) Close() error {
 func (c *connection) RemoveStreams(streams ...httpstream.Stream) {
 	c.streamLock.Lock()
 	for _, stream := range streams {
-		// It may be possible that the provided stream is nil if timed out.
-		if stream != nil {
-			delete(c.streams, stream.Identifier())
-		}
+		delete(c.streams, stream.Identifier())
 	}
 	c.streamLock.Unlock()
 }

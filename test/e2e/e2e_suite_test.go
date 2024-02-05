@@ -22,8 +22,8 @@ import (
 
 	"kubeops.dev/config-syncer/test/e2e/framework"
 
-	. "github.com/onsi/ginkgo/v2"
-	"github.com/onsi/ginkgo/v2/reporters"
+	. "github.com/onsi/ginkgo"
+	"github.com/onsi/ginkgo/reporters"
 	. "github.com/onsi/gomega"
 	"gomodules.xyz/logs"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -32,7 +32,9 @@ import (
 
 const TestTimeout = 3 * time.Minute
 
-var root *framework.Framework
+var (
+	root *framework.Framework
+)
 
 func TestE2E(t *testing.T) {
 	logs.InitLogs()
