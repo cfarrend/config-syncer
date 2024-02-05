@@ -1,14 +1,14 @@
 name: Release
 
 on:
-  pull_request:
-    branches:
-      - "*"
   push:
-    branches:
-      - master
-  # Allows you to run this workflow manually from the Actions tab
+    tags:
+      - "*.*"
   workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -30,8 +30,9 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v1
 
-      - name: Publish to DockerHub Registry
+      - name: Publish to DockerHub Container Registry
         env:
+          REGISTRY: cfarrend
           APPSCODE_ENV: prod
         run: |
           docker login -u ${{ secrets.DOCKER_USER }} -p ${{ secrets.DOCKER_PASS }}
