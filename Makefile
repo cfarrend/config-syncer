@@ -25,7 +25,7 @@ CODE_GENERATOR_IMAGE ?= ghcr.io/appscode/gengo:release-1.25
 API_GROUPS           ?= kubed:v1alpha1
 
 # Where to push the docker image.
-REGISTRY ?= appscode
+REGISTRY ?= cfarrend
 SRC_REG  ?=
 
 # This version-strategy uses git tags to set the version string
