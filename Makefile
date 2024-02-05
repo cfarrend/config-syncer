@@ -48,6 +48,9 @@ else
 	endif
 endif
 
+VERSION := "0.0.2"
+version_strategy := tag
+
 ###
 ### These variables should not need tweaking.
 ###
