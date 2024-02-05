@@ -17,16 +17,15 @@ SHELL=/bin/bash -o pipefail
 
 GO_PKG   := kubeops.dev
 REPO     := $(notdir $(shell pwd))
-BIN      := config-syncer
+BIN      := kubed
 COMPRESS ?= no
 
 CRD_OPTIONS          ?= "crd:allowDangerousTypes=true"
-CODE_GENERATOR_IMAGE ?= ghcr.io/appscode/gengo:release-1.25
+CODE_GENERATOR_IMAGE ?= appscode/gengo:release-1.21
 API_GROUPS           ?= kubed:v1alpha1
 
 # Where to push the docker image.
 REGISTRY ?= cfarrend
-SRC_REG  ?=
 
 # This version-strategy uses git tags to set the version string
 git_branch       := $(shell git rev-parse --abbrev-ref HEAD)
@@ -48,7 +47,7 @@ else
 	endif
 endif
 
-VERSION := "0.0.3"
+VERSION := "0.0.4"
 version_strategy := tag
 
 ###
@@ -75,9 +74,9 @@ TAG              := $(VERSION)_$(OS)_$(ARCH)
 TAG_PROD         := $(TAG)
 TAG_DBG          := $(VERSION)-dbg_$(OS)_$(ARCH)
 
-GO_VERSION       ?= 1.20
-BUILD_IMAGE      ?= ghcr.io/appscode/golang-dev:$(GO_VERSION)
-CHART_TEST_IMAGE ?= quay.io/helmpack/chart-testing:v3.5.1
+GO_VERSION       ?= 1.17
+BUILD_IMAGE      ?= appscode/golang-dev:$(GO_VERSION)
+CHART_TEST_IMAGE ?= quay.io/helmpack/chart-testing:v3.4.0
 
 OUTBIN = bin/$(OS)_$(ARCH)/$(BIN)
 ifeq ($(OS),windows)
@@ -138,9 +137,23 @@ version:
 	@echo ::set-output name=commit_hash::$(commit_hash)
 	@echo ::set-output name=commit_timestamp::$(commit_timestamp)
 
+.PHONY: gen-chart-doc
+gen-chart-doc: gen-chart-doc-kubed
+
+gen-chart-doc-%:
+	@echo "Generate $* chart docs"
+	@docker run --rm 	                                 \
+		-u $$(id -u):$$(id -g)                           \
+		-v /tmp:/.cache                                  \
+		-v $$(pwd):$(DOCKER_REPO_ROOT)                   \
+		-w $(DOCKER_REPO_ROOT)                           \
+		--env HTTP_PROXY=$(HTTP_PROXY)                   \
+		--env HTTPS_PROXY=$(HTTPS_PROXY)                 \
+		$(BUILD_IMAGE)                                   \
+		chart-doc-gen -d ./charts/$*/doc.yaml -v ./charts/$*/values.yaml > ./charts/$*/README.md
+
 .PHONY: gen
-gen:
-	@true
+gen: gen-chart-doc
 
 fmt: $(BUILD_DIRS)
 	@docker run                                                 \
@@ -222,7 +235,6 @@ $(OUTBIN): .go/$(OUTBIN).stamp
 DOTFILE_IMAGE    = $(subst /,_,$(IMAGE))-$(TAG)
 
 container: bin/.container-$(DOTFILE_IMAGE)-PROD bin/.container-$(DOTFILE_IMAGE)-DBG
-ifeq (,$(SRC_REG))
 bin/.container-$(DOTFILE_IMAGE)-%: bin/$(OS)_$(ARCH)/$(BIN) $(DOCKERFILE_%)
 	@echo "container: $(IMAGE):$(TAG_$*)"
 	@sed                                    \
@@ -231,15 +243,9 @@ bin/.container-$(DOTFILE_IMAGE)-%: bin/$(OS)_$(ARCH)/$(BIN) $(DOCKERFILE_%)
 		-e 's|{ARG_OS}|$(OS)|g'             \
 		-e 's|{ARG_FROM}|$(BASEIMAGE_$*)|g' \
 		$(DOCKERFILE_$*) > bin/.dockerfile-$*-$(OS)_$(ARCH)
-	@docker buildx build --platform $(OS)/$(ARCH) --load --pull -t $(IMAGE):$(TAG_$*) -f bin/.dockerfile-$*-$(OS)_$(ARCH) .
+	@DOCKER_CLI_EXPERIMENTAL=enabled docker buildx build --platform $(OS)/$(ARCH) --load --pull -t $(IMAGE):$(TAG_$*) -f bin/.dockerfile-$*-$(OS)_$(ARCH) .
 	@docker images -q $(IMAGE):$(TAG_$*) > $@
 	@echo
-else
-bin/.container-$(DOTFILE_IMAGE)-%:
-	@echo "container: $(IMAGE):$(TAG_$*)"
-	@docker tag $(SRC_REG)/$(BIN):$(TAG_$*) $(IMAGE):$(TAG_$*)
-	@echo
-endif
 
 push: bin/.push-$(DOTFILE_IMAGE)-PROD bin/.push-$(DOTFILE_IMAGE)-DBG
 bin/.push-$(DOTFILE_IMAGE)-%: bin/.container-$(DOTFILE_IMAGE)-%
@@ -250,8 +256,8 @@ bin/.push-$(DOTFILE_IMAGE)-%: bin/.container-$(DOTFILE_IMAGE)-%
 .PHONY: docker-manifest
 docker-manifest: docker-manifest-PROD docker-manifest-DBG
 docker-manifest-%:
-	docker manifest create -a $(IMAGE):$(VERSION_$*) $(foreach PLATFORM,$(DOCKER_PLATFORMS),$(IMAGE):$(VERSION_$*)_$(subst /,_,$(PLATFORM)))
-	docker manifest push $(IMAGE):$(VERSION_$*)
+	DOCKER_CLI_EXPERIMENTAL=enabled docker manifest create -a $(IMAGE):$(VERSION_$*) $(foreach PLATFORM,$(DOCKER_PLATFORMS),$(IMAGE):$(VERSION_$*)_$(subst /,_,$(PLATFORM)))
+	DOCKER_CLI_EXPERIMENTAL=enabled docker manifest push $(IMAGE):$(VERSION_$*)
 
 .PHONY: test
 test: unit-tests e2e-tests
@@ -323,6 +329,26 @@ e2e-tests: $(BUILD_DIRS)
 e2e-parallel:
 	@$(MAKE) e2e-tests GINKGO_ARGS="-p -stream --flakeAttempts=2" --no-print-directory
 
+.PHONY: ct
+ct: $(BUILD_DIRS)
+	@docker run                                                 \
+	    -i                                                      \
+	    --rm                                                    \
+	    -v $$(pwd):/src                                         \
+	    -w /src                                                 \
+	    --net=host                                              \
+	    -v $(HOME)/.kube:/.kube                                 \
+	    -v $(HOME)/.minikube:$(HOME)/.minikube                  \
+	    -v $(HOME)/.credentials:$(HOME)/.credentials            \
+	    -v $$(pwd)/.go/bin/$(OS)_$(ARCH):/go/bin                \
+	    -v $$(pwd)/.go/bin/$(OS)_$(ARCH):/go/bin/$(OS)_$(ARCH)  \
+	    -v $$(pwd)/.go/cache:/.cache                            \
+	    --env HTTP_PROXY=$(HTTP_PROXY)                          \
+	    --env HTTPS_PROXY=$(HTTPS_PROXY)                        \
+	    --env KUBECONFIG=$(subst $(HOME),,$(KUBECONFIG))        \
+	    $(CHART_TEST_IMAGE)                                     \
+	    ct lint-and-install --all
+
 ADDTL_LINTERS   := goconst,gofmt,goimports,unparam
 
 .PHONY: lint
@@ -339,6 +365,7 @@ lint: $(BUILD_DIRS)
 	    -v $$(pwd)/.go/cache:/.cache                            \
 	    --env HTTP_PROXY=$(HTTP_PROXY)                          \
 	    --env HTTPS_PROXY=$(HTTPS_PROXY)                        \
+	    --env GO111MODULE=on                                    \
 	    --env GOFLAGS="-mod=vendor"                             \
 	    $(BUILD_IMAGE)                                          \
 	    golangci-lint run --enable $(ADDTL_LINTERS) --timeout=10m --skip-files="generated.*\.go$\" --skip-dirs-use-default --skip-dirs=client,vendor
@@ -346,9 +373,7 @@ lint: $(BUILD_DIRS)
 $(BUILD_DIRS):
 	@mkdir -p $@
 
-KUBE_NAMESPACE    ?= kubeops
-REGISTRY_SECRET   ?=
-IMAGE_PULL_POLICY ?= IfNotPresent
+REGISTRY_SECRET ?=
 
 ifeq ($(strip $(REGISTRY_SECRET)),)
 	IMAGE_PULL_SECRETS =
@@ -358,20 +383,16 @@ endif
 
 .PHONY: install
 install:
-	@cd ../installer; \
-	kubectl create ns $(KUBE_NAMESPACE) || true; \
-	kubectl label ns $(KUBE_NAMESPACE) pod-security.kubernetes.io/enforce=restricted; \
-	helm upgrade -i config-syncer charts/config-syncer --wait \
-		--namespace=$(KUBE_NAMESPACE) --create-namespace \
-		--set operator.registry=$(REGISTRY) \
-		--set operator.tag=$(TAG) \
-		--set imagePullPolicy=$(IMAGE_PULL_POLICY) \
+	helm install kubed charts/kubed --wait \
+		--namespace=kube-system \
+		--set kubed.registry=$(REGISTRY) \
+		--set kubed.tag=$(TAG) \
+		--set imagePullPolicy=Always \
 		$(IMAGE_PULL_SECRETS)
 
 .PHONY: uninstall
 uninstall:
-	@cd ../installer; \
-	helm uninstall config-syncer --namespace=$(KUBE_NAMESPACE) || true
+	@helm uninstall kubed --namespace=kube-system || true
 
 .PHONY: purge
 purge: uninstall
@@ -385,8 +406,8 @@ verify: verify-gen verify-modules
 
 .PHONY: verify-modules
 verify-modules:
-	go mod tidy
-	go mod vendor
+	GO111MODULE=on go mod tidy
+	GO111MODULE=on go mod vendor
 	@if !(git diff --exit-code HEAD); then \
 		echo "go module files are out of date"; exit 1; \
 	fi
@@ -456,22 +477,10 @@ clean:
 
 .PHONY: run
 run:
-	go run -mod=vendor ./cmd/config-syncer run \
+	GO111MODULE=on go run -mod=vendor ./cmd/kubed run \
 		--v=3 \
 		--secure-port=8443 \
 		--kubeconfig=$(KUBECONFIG) \
 		--authorization-kubeconfig=$(KUBECONFIG) \
 		--authentication-kubeconfig=$(KUBECONFIG) \
 		--authentication-skip-lookup
-
-.PHONY: push-to-kind
-push-to-kind: container
-	@echo "Loading docker image into kind cluster...."
-	@kind load docker-image $(IMAGE):$(TAG_PROD)
-	@echo "Image has been pushed successfully into kind cluster."
-
-.PHONY: deploy-to-kind
-deploy-to-kind: push-to-kind install
-
-.PHONY: deploy
-deploy: uninstall push install
